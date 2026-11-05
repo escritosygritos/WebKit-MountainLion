@@ -3,7 +3,7 @@
 ## Target and status
 
 Target: OS X **10.8.5 / Darwin 12, Intel x86_64, stock Safari 6**. The exact Safari
-6 point release and its WebKit build must be recorded from the target machine;
+6 point release is **6.2.8 (8537.85.17.9.1)**, reported by the target's user;
 Safari 6 is not a single frozen private ABI.
 
 Foundation: Wowfunhappy's Mavericks backport of modern Apple WebKit, described in
@@ -96,11 +96,58 @@ For Safari 6, determine rather than assume:
    extensions, inspector frontend protocol, fullscreen and accessibility behavior.
    Safari 7 working with a classic inspector does not prove Safari 6's frontend works.
 
-No Safari 6 binaries, disassembly or target SDK headers are present in this
-checkout analysis. A definitive symbol/selector delta against Safari 7 is therefore
+The supplied Safari 6 text reports establish the symbol-level observations below.
+Safari 6 binaries, disassembly and target SDK headers are not present in this
+checkout analysis. A definitive selector and callback-layout comparison remains
 outstanding; do not manufacture Safari 6 contracts from Safari 7's text files.
 Historical Apple WebKit source corresponding to the target's actual build can
 explain old declarations, but the shipped binary remains the ABI authority.
+
+### Observed Safari 6.2.8 framework bindings
+
+User-supplied `Safari6-ABI.zip` and `Safari6-Framework-ABI-2.zip` text captures
+report OS X 10.8.5 build 12F2560, Darwin 12.6.0, x86_64. The launcher imports only
+`_SafariMain` and `dyld_stub_binder`, and carries
+`DYLD_VERSIONED_FRAMEWORK_PATH=/System/Library/StagedFrameworks/Safari`.
+
+Both Safari framework images exist. Their reported identities and unique undefined
+symbols attributed by `nm -um` to the three WebKit frameworks are:
+
+| Safari framework location | Current dylib version | JavaScriptCore | WebKit | WebKit2 |
+| --- | --- | ---: | ---: | ---: |
+| `/System/Library/PrivateFrameworks/Safari.framework/Versions/A/Safari` | 536.30.1 | 87 | 70 | 542 |
+| `/System/Library/StagedFrameworks/Safari/Safari.framework/Versions/A/Safari` | 537.85.17 | 95 | 620 | 0 |
+
+The older image's SHA-256 is
+`057d7d6dacda9258d7161cb85a43b98a0d7fa1f871c1cfac225ec723dcaff2bd`;
+the staged image's is
+`6a7c52ccd80ed734ad36518e43f8b907c29d6438ef0d4395a4cafc314feaea1d`.
+These identify user-reported images, not independently authenticated Apple artifacts.
+
+The staged image records JavaScriptCore 600.8.7 and WebKit/WebKit2 600.8.9 library
+versions. Its 95 JavaScriptCore symbol names exactly match the checked-in Safari 7
+contract. Its 620 WebKit imports contain five names outside the union of Safari 7's
+WebKit and WebKit2 lists:
+
+- `_WKContextGetOriginDataManager`
+- `_WKOriginDataManagerDeleteAllEntries`
+- `_WKOriginDataManagerDeleteEntriesForOrigin`
+- `_WKOriginDataManagerGetOrigins`
+- `_WKPageSetBackgroundExtendsBeyondPage`
+
+All five have implementations in `Source/WebKit/UIProcess/API/C/WKPage.cpp`.
+This is source-presence evidence; staged exports, calling conventions, semantics
+and old callback layouts require separate checks. Fifteen names in the Safari 7
+union are absent from this staged image's import set; retain the Mavericks contract.
+Counts describe these two images only, not all Safari helpers or injected bundles.
+
+The launcher requires Safari.framework 537.85.17 and specifies the staged search
+path; the staged image matches that requirement while the older copy does not.
+This supports using the staged image as the primary 6.2.8 embedder contract.
+Loaded-image observation is still required to establish the actual runtime graph.
+The updated browser's framework layout is therefore closer to the backport's
+601-style re-export design than the original system copy suggests. This does not
+resolve Mountain Lion's missing system APIs or prove the port works.
 
 ### Read-only evidence collection
 
