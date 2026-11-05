@@ -149,6 +149,38 @@ The updated browser's framework layout is therefore closer to the backport's
 601-style re-export design than the original system copy suggests. This does not
 resolve Mountain Lion's missing system APIs or prove the port works.
 
+### Observed staged WebKit export surface
+
+The user-supplied `Safari6-WebKit-ABI.zip` captures
+`/System/Library/StagedFrameworks/Safari/WebKit.framework/Versions/A/WebKit`.
+It reports current version 600.8.9, compatibility version 1.0.0, minimum OS 10.8
+and SDK 10.8. Its reported SHA-256 is
+`11072f1c4865cf149786799547ea636a857293599df56cb277eaa902c95c8ec0`.
+
+Of the staged Safari framework's 620 unique WebKit imports, 596 appear as direct
+defined external symbols in this WebKit export report, including all five names
+outside the Safari 7 union listed above. The other 24 names exactly match the
+checked-in Safari 7 `safari-needs-from-WebKit.txt` legacy contract. This is a
+symbol-name comparison, not a signature, behavioral or backport-binary validation.
+
+The stock image records `LC_REEXPORT_DYLIB` for both:
+
+- `/System/Library/StagedFrameworks/Safari/WebKitLegacy.framework/Versions/A/WebKitLegacy`
+- `/System/Library/Frameworks/WebKit.framework/Versions/A/Frameworks/WebCore.framework/Versions/A/WebCore`
+
+The 24 legacy imports therefore require checking the re-export closure rather
+than declaring them missing from the product. This also establishes a packaging
+difference: the captured stock legacy image is a staged sibling, whereas this
+backport nests WebKitLegacy in public WebKit. Compatibility depends on resolving
+the old install-name bindings and re-exports, not reproducing every stock pathname.
+The static reports do not establish which images actually load at runtime.
+
+Both supplied Safari.framework export reports also contain `_WKBundleInitialize`.
+Safari.framework therefore contains an injected-bundle entry point; the absence
+of a separately named `.bundle` directory does not establish missing bundle code.
+Confirm the path passed to WebKit and the runtime initialization before treating
+this as a complete injected-bundle compatibility check.
+
 ### Read-only evidence collection
 
 `AquaWebKitSupport/host-abi/capture-host-abi.sh` collects x86_64 library references,
