@@ -39,7 +39,7 @@ for binary in "$@"; do
         exit 2
     fi
     binary="$(cd "$(dirname "$binary")" && pwd)/$(basename "$binary")"
-    lipo -verify_arch x86_64 "$binary"
+    lipo "$binary" -verify_arch x86_64
 done
 mkdir "$output"
 output=$(cd "$output" && pwd)
