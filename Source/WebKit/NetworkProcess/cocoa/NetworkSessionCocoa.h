@@ -39,6 +39,7 @@ OBJC_CLASS NSURLCredentialStorage;
 #include "DownloadID.h"
 #include "NetworkDataTaskCocoa.h"
 #include "NetworkSession.h"
+#include "CocoaCurlSessionPolicy.h" // AQUAWEBKIT: each partition owns transport policy independently of its native session.
 // AQUAWEBKIT: the transport pool is shared with Cocoa legacy loaders.
 #include <WebCore/CocoaCurlConnection.h>
 // AQUAWEBKIT: HSTS remains a browser policy with native-session persistence boundaries.
@@ -52,6 +53,7 @@ OBJC_CLASS NSURLCredentialStorage;
 #include <wtf/RefCountedAndCanMakeWeakPtr.h>
 #include <wtf/Seconds.h>
 #include <wtf/TZoneMalloc.h>
+#include <optional> // AQUAWEBKIT: a partition's policy is present after explicit initialization.
 
 namespace WebCore {
 enum class AdvancedPrivacyProtections : uint16_t;
@@ -65,7 +67,6 @@ using CurlNetworkScheduler = WebCore::CocoaCurlConnectionPool;
 enum class NegotiatedLegacyTLS : bool;
 class LegacyCustomProtocolManager;
 class NetworkSessionCocoa;
-struct CocoaCurlSessionPolicy; // AQUAWEBKIT: transport policy has no NSURLSession types.
 
 struct SessionWrapper : public CanMakeWeakPtr<SessionWrapper>, public CanMakeCheckedPtr<SessionWrapper> {
     WTF_DEPRECATED_MAKE_STRUCT_FAST_ALLOCATED(SessionWrapper);
@@ -79,6 +80,7 @@ struct SessionWrapper : public CanMakeWeakPtr<SessionWrapper>, public CanMakeChe
     void recreateSessionWithUpdatedProxyConfigurations(NetworkSessionCocoa&);
 
     CocoaCurlSessionPolicy curlSessionPolicy() const; // AQUAWEBKIT: HTTP and WebSockets share the selected partition's policy.
+    void setCurlSessionPolicy(CocoaCurlSessionPolicy&&); // AQUAWEBKIT: policy input carries no native session object.
 
     // AQUAWEBKIT: curl owns its typed task registry within the same credential/privacy partition.
     RefPtr<CurlNetworkScheduler> curlScheduler;
@@ -92,6 +94,9 @@ struct SessionWrapper : public CanMakeWeakPtr<SessionWrapper>, public CanMakeChe
     HashMap<NetworkDataTaskCocoa::TaskIdentifier, ThreadSafeWeakPtr<NetworkDataTaskCocoa>, DefaultHash<NetworkDataTaskCocoa::TaskIdentifier>, WTF::UnsignedWithZeroKeyHashTraits<NetworkDataTaskCocoa::TaskIdentifier>> dataTaskMap;
     HashMap<NetworkDataTaskCocoa::TaskIdentifier, DownloadID, DefaultHash<NetworkDataTaskCocoa::TaskIdentifier>, WTF::UnsignedWithZeroKeyHashTraits<NetworkDataTaskCocoa::TaskIdentifier>> downloadMap;
     HashMap<NetworkDataTaskCocoa::TaskIdentifier, ThreadSafeWeakPtr<WebSocketTask>, DefaultHash<NetworkDataTaskCocoa::TaskIdentifier>, WTF::UnsignedWithZeroKeyHashTraits<NetworkDataTaskCocoa::TaskIdentifier>> webSocketDataTaskMap;
+
+private:
+    std::optional<CocoaCurlSessionPolicy> m_curlSessionPolicy; // AQUAWEBKIT: initialized from effective native settings at session creation and proxy recreation.
 };
 
 struct IsolatedSession {

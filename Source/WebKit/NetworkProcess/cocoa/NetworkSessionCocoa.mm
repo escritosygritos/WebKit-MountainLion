@@ -1226,6 +1226,16 @@ ALLOW_DEPRECATED_DECLARATIONS_BEGIN
 ALLOW_DEPRECATED_DECLARATIONS_END
 }
 
+// AQUAWEBKIT: adapt the native session's effective settings at its lifecycle boundary.
+static CocoaCurlSessionPolicy curlPolicyFromConfiguration(NSURLSessionConfiguration *configuration)
+{
+    return {
+        configuration.TLSMinimumSupportedProtocolVersion,
+        !configuration._shouldSkipPreferredClientCertificateLookup,
+        bridge_cast(configuration.connectionProxyDictionary)
+    };
+}
+
 void SessionWrapper::recreateSessionWithUpdatedProxyConfigurations(NetworkSessionCocoa& networkSession)
 {
     RELEASE_ASSERT(session);
@@ -1245,21 +1255,24 @@ void SessionWrapper::recreateSessionWithUpdatedProxyConfigurations(NetworkSessio
     [delegate sessionInvalidated];
     delegate = adoptNS([[WKNetworkSessionDelegate alloc] initWithNetworkSession:networkSession wrapper:*this withCredentials:withCredentials]);
     session = [NSURLSession sessionWithConfiguration:configuration.get() delegate:delegate.get() delegateQueue:[NSOperationQueue mainQueue]];
+    setCurlSessionPolicy(curlPolicyFromConfiguration(session.get().configuration)); // AQUAWEBKIT: refresh policy after the native session accepts its proxy configuration.
 
     dataTaskMap.clear();
     downloadMap.clear();
     webSocketDataTaskMap.clear();
 }
 
-// AQUAWEBKIT: read the selected session's current configuration for each transport exchange.
+// AQUAWEBKIT: transport policy belongs to the credential/privacy partition.
 CocoaCurlSessionPolicy SessionWrapper::curlSessionPolicy() const
 {
-    RetainPtr<NSURLSessionConfiguration> configuration = session.get().configuration;
-    return {
-        configuration.get().TLSMinimumSupportedProtocolVersion,
-        !configuration.get()._shouldSkipPreferredClientCertificateLookup,
-        bridge_cast(configuration.get().connectionProxyDictionary)
-    };
+    RELEASE_ASSERT(m_curlSessionPolicy);
+    return *m_curlSessionPolicy;
+}
+
+// AQUAWEBKIT: accepts a complete policy without creating a native session or supplying defaults.
+void SessionWrapper::setCurlSessionPolicy(CocoaCurlSessionPolicy&& policy)
+{
+    m_curlSessionPolicy = WTF::move(policy);
 }
 
 SessionWrapper::~SessionWrapper()
@@ -1289,6 +1302,7 @@ void SessionWrapper::initialize(NSURLSessionConfiguration *configuration, Networ
 
     delegate = adoptNS([[WKNetworkSessionDelegate alloc] initWithNetworkSession:networkSession wrapper:*this withCredentials:storedCredentialsPolicy == WebCore::StoredCredentialsPolicy::Use]);
     session = [NSURLSession sessionWithConfiguration:configuration delegate:delegate.get() delegateQueue:[NSOperationQueue mainQueue]];
+    setCurlSessionPolicy(curlPolicyFromConfiguration(session.get().configuration)); // AQUAWEBKIT: preserve native effective TLS, identity and proxy settings for this partition.
 }
 
 NetworkSessionCocoa::NetworkSessionCocoa(NetworkProcess& networkProcess, const NetworkSessionCreationParameters& parameters)

@@ -262,18 +262,25 @@ this change.
 
 `CocoaCurlSessionPolicy.h` defines the three session-selected values used by the
 HTTP and WebSocket curl transports: minimum TLS protocol, preferred-client-identity
-lookup, and a retained proxy dictionary. `SessionWrapper::curlSessionPolicy()`
-reads them from its native session configuration for each transport exchange.
+lookup, and a retained proxy dictionary. Each SessionWrapper owns an optional
+policy, explicitly populated through `setCurlSessionPolicy`.
 The callers retain their existing credential/privacy partition selection and
 consume these values through this interface. The proxy dictionary remains owned
 while the policy and transport options hold it; TLS and client-certificate values
-come from the same native configuration as before.
+come from the native session's effective configuration. Both native session
+creation sites populate the policy after the session factory returns: initial
+partition setup and proxy recreation. NSURLSession copies its configuration at
+creation; the policy snapshot follows that same lifecycle. Proxy recreation
+retains its existing curl-pool invalidation before replacing the session.
 
-This separates transport callers from NSURLSession configuration access, but the
-policy producer, session initialization, credential storage and native task paths
-still depend on NSURLSession. It does not enable networking on 10.8. The next
-implementation step must supply partition policy independently of native session
-creation and trace every native-task caller before selecting an alternate backend.
+Transport policy reads use owned values and do not message NSURLSession. A caller
+can supply complete typed policy without creating a native session; there is no
+default policy for an uninitialized partition. The Mavericks lifecycle adapter
+still obtains effective values from the native configuration. That adapter,
+session initialization, credential storage and native task paths still depend on
+NSURLSession. This does not enable networking on 10.8. The next implementation
+step must provide a 10.8 policy producer and trace every native-task caller before
+selecting an alternate backend.
 The session abstraction must preserve private/stateless isolation, credential
 deletion, proxy updates and client certificate decisions; empty session classes
 cannot satisfy that requirement.
@@ -286,6 +293,21 @@ build the affected NetworkSessionCocoa, NetworkDataTaskCurlCocoa and WebSocketTa
 translation units on macOS, then compare HTTP/WebSocket proxy routing, TLS floors,
 client certificate handling, redirects and credential/privacy partitions on
 Mavericks. Repeat those checks against the future 10.8 policy producer.
+Specifically check that credential-free and ephemeral-stateless wrappers receive
+their own policy, that policy survives credential-pool retirement, and that proxy
+recreation replaces the policy together with its native session. The native
+configuration factory remains responsible for disabling preferred-identity lookup
+in credential-free/stateless partitions; the policy adapter preserves that value.
+
+The lifecycle audit also identifies remaining native dependencies:
+
+| Path | Current dependency | Requirement for a 10.8 backend |
+| --- | --- | --- |
+| Default, per-page, isolated and app-bound session construction | Native configuration factories and SessionWrapper initialization | Preserve distinct partition ownership without using native-session existence as the initialization sentinel. |
+| Credential-free/stateless creation | Copies configuration from a credentialed native session, clears credential storage and identity lookup | Build explicit partition policy and retain the cookie/storage isolation rules. |
+| Credential enumeration and deletion | `nsCredentialStorage()` retrieves storage through native session configuration; deletion retires curl pools | Own the selected credential store independently and preserve session-only deletion rules. |
+| Invalidation and proxy changes | Native session/delegate invalidation and curl-pool retirement | Keep both active-transfer cancellation and connection-authentication isolation. |
+| Native tasks and auxiliary storage | Resume/data-task paths, remaining session APIs, HSTS/alternative-service accessors | Audit selected feature paths; typed transport policy alone cannot replace them. |
 
 ## Validation boundary
 
