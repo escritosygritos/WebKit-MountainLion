@@ -25,6 +25,7 @@
 
 #import "config.h"
 #import "NetworkSessionCocoa.h"
+#import "CocoaCurlSessionPolicy.h" // AQUAWEBKIT: session-owned values consumed by the curl transports.
 
 #import "AppStoreDaemonSPI.h"
 #import "AuthenticationChallengeDisposition.h"
@@ -1194,7 +1195,8 @@ _NSHSTSStorage *NetworkSessionCocoa::hstsStorage() const
 
 NSURLCredentialStorage *NetworkSessionCocoa::nsCredentialStorage() const
 {
-    return m_defaultSessionSet->sessionWithCredentialStorage->session.get().configuration.URLCredentialStorage;
+    // return m_defaultSessionSet->sessionWithCredentialStorage->session.get().configuration.URLCredentialStorage;
+    return m_defaultSessionSet->sessionWithCredentialStorage->credentialStorage(); // AQUAWEBKIT: credential enumeration and deletion use the partition-owned store.
 }
 
 std::unique_ptr<NetworkSession> NetworkSessionCocoa::create(NetworkProcess& networkProcess, const NetworkSessionCreationParameters& parameters)
@@ -1225,6 +1227,16 @@ ALLOW_DEPRECATED_DECLARATIONS_BEGIN
 ALLOW_DEPRECATED_DECLARATIONS_END
 }
 
+// AQUAWEBKIT: adapt the native session's effective settings at its lifecycle boundary.
+static CocoaCurlSessionPolicy curlPolicyFromConfiguration(NSURLSessionConfiguration *configuration)
+{
+    return {
+        configuration.TLSMinimumSupportedProtocolVersion,
+        !configuration._shouldSkipPreferredClientCertificateLookup,
+        bridge_cast(configuration.connectionProxyDictionary)
+    };
+}
+
 void SessionWrapper::recreateSessionWithUpdatedProxyConfigurations(NetworkSessionCocoa& networkSession)
 {
     RELEASE_ASSERT(session);
@@ -1244,10 +1256,38 @@ void SessionWrapper::recreateSessionWithUpdatedProxyConfigurations(NetworkSessio
     [delegate sessionInvalidated];
     delegate = adoptNS([[WKNetworkSessionDelegate alloc] initWithNetworkSession:networkSession wrapper:*this withCredentials:withCredentials]);
     session = [NSURLSession sessionWithConfiguration:configuration.get() delegate:delegate.get() delegateQueue:[NSOperationQueue mainQueue]];
+    captureNativeSessionState(); // AQUAWEBKIT: refresh policy and credential ownership from the replacement session.
 
     dataTaskMap.clear();
     downloadMap.clear();
     webSocketDataTaskMap.clear();
+}
+
+// AQUAWEBKIT: transport policy belongs to the credential/privacy partition.
+CocoaCurlSessionPolicy SessionWrapper::curlSessionPolicy() const
+{
+    RELEASE_ASSERT(m_curlSessionPolicy);
+    return *m_curlSessionPolicy;
+}
+
+// AQUAWEBKIT: accepts a complete policy without creating a native session or supplying defaults.
+void SessionWrapper::setCurlSessionPolicy(CocoaCurlSessionPolicy&& policy)
+{
+    m_curlSessionPolicy = WTF::move(policy);
+}
+
+// AQUAWEBKIT: preserve the native configuration's store identity, including nil.
+void SessionWrapper::setCredentialStorage(NSURLCredentialStorage *storage)
+{
+    m_credentialStorage = storage;
+}
+
+// AQUAWEBKIT: capture effective settings after native session creation.
+void SessionWrapper::captureNativeSessionState()
+{
+    RetainPtr<NSURLSessionConfiguration> configuration = session.get().configuration;
+    setCurlSessionPolicy(curlPolicyFromConfiguration(configuration.get()));
+    setCredentialStorage(configuration.get().URLCredentialStorage);
 }
 
 SessionWrapper::~SessionWrapper()
@@ -1277,6 +1317,7 @@ void SessionWrapper::initialize(NSURLSessionConfiguration *configuration, Networ
 
     delegate = adoptNS([[WKNetworkSessionDelegate alloc] initWithNetworkSession:networkSession wrapper:*this withCredentials:storedCredentialsPolicy == WebCore::StoredCredentialsPolicy::Use]);
     session = [NSURLSession sessionWithConfiguration:configuration delegate:delegate.get() delegateQueue:[NSOperationQueue mainQueue]];
+    captureNativeSessionState(); // AQUAWEBKIT: initialize policy and credential ownership from this partition's effective configuration.
 }
 
 NetworkSessionCocoa::NetworkSessionCocoa(NetworkProcess& networkProcess, const NetworkSessionCreationParameters& parameters)

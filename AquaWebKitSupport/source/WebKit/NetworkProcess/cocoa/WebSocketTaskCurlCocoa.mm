@@ -5,6 +5,7 @@
 
 #import "config.h"
 #import "WebSocketTaskCurlCocoa.h"
+#import "CocoaCurlSessionPolicy.h"
 
 #import "AuthenticationChallengeDisposition.h"
 #import "AuthenticationManager.h"
@@ -467,7 +468,7 @@ void WebSocketTask::startConnection()
         fail("Invalid WebSocket URL"_s);
         return;
     }
-    RetainPtr<NSURLSessionConfiguration> configuration = session->sessionWrapperForTask(m_webPageProxyID.asOptional(), m_request, m_storedCredentialsPolicy, std::nullopt)->session.get().configuration;
+    auto policy = session->sessionWrapperForTask(m_webPageProxyID.asOptional(), m_request, m_storedCredentialsPolicy, std::nullopt)->curlSessionPolicy();
     armHandshakeDeadline(handshakeTimeout(m_request));
 
     bool secure = isSecureURL(url);
@@ -477,11 +478,11 @@ void WebSocketTask::startConnection()
     options.secure = secure;
     // An HTTP proxy forwards a ws:// upgrade in absolute form; wss:// is tunnelled.
     options.tunnelsPlainConnections = false;
-    options.minimumTLSProtocol = configuration.get().TLSMinimumSupportedProtocolVersion;
+    options.minimumTLSProtocol = policy.minimumTLSProtocol;
     options.serverTrust = CocoaCurlSocketStream::ServerTrust::Client;
-    options.presentsPreferredIdentity = !configuration.get()._shouldSkipPreferredClientCertificateLookup;
+    options.presentsPreferredIdentity = policy.presentsPreferredIdentity;
     // A session routes its tasks by its configuration's proxy dictionary; an empty one means the system settings.
-    options.configuredProxySettings = (__bridge CFDictionaryRef)configuration.get().connectionProxyDictionary;
+    options.configuredProxySettings = policy.proxySettings;
     options.proxyFilterResults = m_proxyFilterResults;
     // The handshake deadline bounds the connection, and waits while a question about it is with the user, as a load's
     // timer does; curl keeps its own limit only for a proxy server's failoverTimeout.
