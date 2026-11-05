@@ -81,6 +81,8 @@ struct SessionWrapper : public CanMakeWeakPtr<SessionWrapper>, public CanMakeChe
 
     CocoaCurlSessionPolicy curlSessionPolicy() const; // AQUAWEBKIT: HTTP and WebSockets share the selected partition's policy.
     void setCurlSessionPolicy(CocoaCurlSessionPolicy&&); // AQUAWEBKIT: policy input carries no native session object.
+    NSURLCredentialStorage *credentialStorage() const { return m_credentialStorage.get(); } // AQUAWEBKIT: the partition owns its selected store.
+    void setCredentialStorage(NSURLCredentialStorage*); // AQUAWEBKIT: accepts a native credential store without a session.
 
     // AQUAWEBKIT: curl owns its typed task registry within the same credential/privacy partition.
     RefPtr<CurlNetworkScheduler> curlScheduler;
@@ -96,7 +98,9 @@ struct SessionWrapper : public CanMakeWeakPtr<SessionWrapper>, public CanMakeChe
     HashMap<NetworkDataTaskCocoa::TaskIdentifier, ThreadSafeWeakPtr<WebSocketTask>, DefaultHash<NetworkDataTaskCocoa::TaskIdentifier>, WTF::UnsignedWithZeroKeyHashTraits<NetworkDataTaskCocoa::TaskIdentifier>> webSocketDataTaskMap;
 
 private:
+    void captureNativeSessionState(); // AQUAWEBKIT: adapt effective configuration at native session lifecycle boundaries.
     std::optional<CocoaCurlSessionPolicy> m_curlSessionPolicy; // AQUAWEBKIT: initialized from effective native settings at session creation and proxy recreation.
+    RetainPtr<NSURLCredentialStorage> m_credentialStorage; // AQUAWEBKIT: nil for partitions whose native configuration excludes credentials.
 };
 
 struct IsolatedSession {

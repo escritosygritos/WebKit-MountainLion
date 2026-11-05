@@ -277,7 +277,7 @@ Transport policy reads use owned values and do not message NSURLSession. A calle
 can supply complete typed policy without creating a native session; there is no
 default policy for an uninitialized partition. The Mavericks lifecycle adapter
 still obtains effective values from the native configuration. That adapter,
-session initialization, credential storage and native task paths still depend on
+session initialization, credential-store selection and native task paths still depend on
 NSURLSession. This does not enable networking on 10.8. The next implementation
 step must provide a 10.8 policy producer and trace every native-task caller before
 selecting an alternate backend.
@@ -305,9 +305,52 @@ The lifecycle audit also identifies remaining native dependencies:
 | --- | --- | --- |
 | Default, per-page, isolated and app-bound session construction | Native configuration factories and SessionWrapper initialization | Preserve distinct partition ownership without using native-session existence as the initialization sentinel. |
 | Credential-free/stateless creation | Copies configuration from a credentialed native session, clears credential storage and identity lookup | Build explicit partition policy and retain the cookie/storage isolation rules. |
-| Credential enumeration and deletion | `nsCredentialStorage()` retrieves storage through native session configuration; deletion retires curl pools | Own the selected credential store independently and preserve session-only deletion rules. |
+| Credential enumeration and deletion | `nsCredentialStorage()` reads the partition-owned store; native lifecycle capture selects that store and deletion retires curl pools | Supply the correct store from a 10.8 producer and preserve session-only deletion rules. |
 | Invalidation and proxy changes | Native session/delegate invalidation and curl-pool retirement | Keep both active-transfer cancellation and connection-authentication isolation. |
 | Native tasks and auxiliary storage | Resume/data-task paths, remaining session APIs, HSTS/alternative-service accessors | Audit selected feature paths; typed transport policy alone cannot replace them. |
+
+### Partition-owned credential storage
+
+Each wrapper retains its selected NSURLCredentialStorage independently of the
+NSURLSession reference. `captureNativeSessionState()` obtains one effective native
+configuration after initial creation or proxy recreation and captures both the
+transport policy and credential store. Nil remains nil for credential-free and
+stateless configurations; the adapter does not substitute shared storage.
+`NetworkSessionCocoa::nsCredentialStorage()` reads this owned store, so credential
+enumeration and deletion no longer retrieve it through a native session. Existing
+pool retirement, shared-store identity comparisons and session-only credential
+deletion rules remain in their existing paths.
+
+`setCredentialStorage` accepts an explicit store without creating NSURLSession,
+but the existing producer still selects the store through its native configuration.
+The 10.8 producer must establish the correct private/persistent CFNetwork storage
+session. The existing polyfills call `_CFURLStorageSessionCreate`,
+`_CFURLStorageSessionCopyCredentialStorage` and
+`-[NSURLCredentialStorage _initWithCFURLCredentialStorage:]`; their Darwin-12
+availability and contracts require verification before reusing them there.
+Source-marker and whitespace checks pass; native compilation, lifetime tests and
+private/persistent credential behavior remain unrun.
+
+## Build-execution blocker
+
+Inspection of the vendored thin x86_64 Mach-O headers, including the compressed
+compiler/linker headers, finds `LC_VERSION_MIN_MACOSX` 10.9.0 on:
+
+- `toolchain/vendor/clang/bin/clang-22.bz2` (SDK 10.9.0)
+- `toolchain/vendor/clang/bin/lld.bz2` (SDK 26.1.0)
+- `toolchain/vendor/clang/bin/llvm-ar` (SDK 10.9.0)
+- `toolchain/vendor/clang/lib/libc++abi.1.0.dylib` (SDK 10.9.0)
+- `toolchain/vendor/clang/lib/libunwind.1.0.dylib` (SDK 10.9.0)
+
+These observations concern those files only, not every runtime image. Host tools
+and deployed runtimes have separate requirements: a newer build host may run the
+compiler while targeting 10.8, but every shipped runtime still needs a compatible
+build and symbol audit. Lowering Mach-O metadata cannot make missing APIs work.
+The existing toolchain is not a validated native bootstrap on the user's 10.8.5
+machine. This cloud workspace runs Linux, contains no Apple SDK, and has no
+configured macOS command-execution connection. A suitable macOS builder, SDK and
+10.8.5 runtime test access are prerequisites to compilation and deployment
+readiness; source-only refactoring cannot discharge them.
 
 ## Validation boundary
 
