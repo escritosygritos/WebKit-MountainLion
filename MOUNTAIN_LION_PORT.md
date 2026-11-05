@@ -181,6 +181,27 @@ of a separately named `.bundle` directory does not establish missing bundle code
 Confirm the path passed to WebKit and the runtime initialization before treating
 this as a complete injected-bundle compatibility check.
 
+### Observed WebKitLegacy closure
+
+The supplied `Safari6-Legacy-ABI.zip` captures the staged sibling
+`/System/Library/StagedFrameworks/Safari/WebKitLegacy.framework/Versions/A/WebKitLegacy`.
+It reports current version 600.8.9, compatibility version 1.0.0 and minimum OS/SDK
+10.8, with SHA-256
+`ea571c3912e6cfe05b31252cd3c3ad270b3b99cc5312d537e564199ea8841952`.
+Its direct defined external symbols include all 24 remaining legacy imports.
+Together with the captured WebKit exports and explicit WebKitLegacy re-export,
+this accounts for all 620 WebKit-attributed symbol names imported by the captured
+staged Safari.framework. It is a static, stock-image symbol-closure check; it does
+not validate the backport's exports, Objective-C selectors, callback signatures,
+dynamic lookups or runtime loading. The 95 JavaScriptCore imports still require
+an export check against the appropriate JavaScriptCore image.
+
+The Safari embedder evidence is sufficient to focus further source work on the
+10.8 system API gaps and old client semantics rather than assume an entirely
+different Safari 6 embedding architecture. Additional stock-framework captures
+should answer a specific unresolved question, not serve as a substitute for
+implementing and testing the port.
+
 ### Read-only evidence collection
 
 `AquaWebKitSupport/host-abi/capture-host-abi.sh` collects x86_64 library references,
