@@ -25,6 +25,7 @@
 
 #import "config.h"
 #import "NetworkSessionCocoa.h"
+#import "CocoaCurlSessionPolicy.h" // AQUAWEBKIT: session-owned values consumed by the curl transports.
 
 #import "AppStoreDaemonSPI.h"
 #import "AuthenticationChallengeDisposition.h"
@@ -1248,6 +1249,17 @@ void SessionWrapper::recreateSessionWithUpdatedProxyConfigurations(NetworkSessio
     dataTaskMap.clear();
     downloadMap.clear();
     webSocketDataTaskMap.clear();
+}
+
+// AQUAWEBKIT: read the selected session's current configuration for each transport exchange.
+CocoaCurlSessionPolicy SessionWrapper::curlSessionPolicy() const
+{
+    RetainPtr<NSURLSessionConfiguration> configuration = session.get().configuration;
+    return {
+        configuration.get().TLSMinimumSupportedProtocolVersion,
+        !configuration.get()._shouldSkipPreferredClientCertificateLookup,
+        bridge_cast(configuration.get().connectionProxyDictionary)
+    };
 }
 
 SessionWrapper::~SessionWrapper()

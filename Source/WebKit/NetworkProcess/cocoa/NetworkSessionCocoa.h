@@ -65,6 +65,7 @@ using CurlNetworkScheduler = WebCore::CocoaCurlConnectionPool;
 enum class NegotiatedLegacyTLS : bool;
 class LegacyCustomProtocolManager;
 class NetworkSessionCocoa;
+struct CocoaCurlSessionPolicy; // AQUAWEBKIT: transport policy has no NSURLSession types.
 
 struct SessionWrapper : public CanMakeWeakPtr<SessionWrapper>, public CanMakeCheckedPtr<SessionWrapper> {
     WTF_DEPRECATED_MAKE_STRUCT_FAST_ALLOCATED(SessionWrapper);
@@ -76,6 +77,8 @@ struct SessionWrapper : public CanMakeWeakPtr<SessionWrapper>, public CanMakeChe
     void initialize(NSURLSessionConfiguration*, NetworkSessionCocoa&, WebCore::StoredCredentialsPolicy, NavigatingToAppBoundDomain);
 
     void recreateSessionWithUpdatedProxyConfigurations(NetworkSessionCocoa&);
+
+    CocoaCurlSessionPolicy curlSessionPolicy() const; // AQUAWEBKIT: HTTP and WebSockets share the selected partition's policy.
 
     // AQUAWEBKIT: curl owns its typed task registry within the same credential/privacy partition.
     RefPtr<CurlNetworkScheduler> curlScheduler;

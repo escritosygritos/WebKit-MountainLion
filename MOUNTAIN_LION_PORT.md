@@ -254,10 +254,38 @@ Do not commit Apple binaries or generated capture files.
    extensions, media, inspector and accessibility. Include heavy real sites and
    inspect crash logs. Retest Safari 7 on 10.9.5 with the default build.
 
-The initial change deliberately leaves deployment flags and production runtime
-code intact: the evidence supports these gaps but not untested implementations.
-No guessed Objective-C class stubs, no-op APIs, broad availability bypasses or
-sandbox exemptions are part of this change.
+Deployment flags retain their Mavericks defaults. No guessed Objective-C class
+stubs, no-op APIs, broad availability bypasses or sandbox exemptions are part of
+this change.
+
+### First networking refactor: transport session policy
+
+`CocoaCurlSessionPolicy.h` defines the three session-selected values used by the
+HTTP and WebSocket curl transports: minimum TLS protocol, preferred-client-identity
+lookup, and a retained proxy dictionary. `SessionWrapper::curlSessionPolicy()`
+reads them from its native session configuration for each transport exchange.
+The callers retain their existing credential/privacy partition selection and
+consume these values through this interface. The proxy dictionary remains owned
+while the policy and transport options hold it; TLS and client-certificate values
+come from the same native configuration as before.
+
+This separates transport callers from NSURLSession configuration access, but the
+policy producer, session initialization, credential storage and native task paths
+still depend on NSURLSession. It does not enable networking on 10.8. The next
+implementation step must supply partition policy independently of native session
+creation and trace every native-task caller before selecting an alternate backend.
+The session abstraction must preserve private/stateless isolation, credential
+deletion, proxy updates and client certificate decisions; empty session classes
+cannot satisfy that requirement.
+
+Validation here is source-level: the PR-base divergence gate and whitespace checks
+pass. The policy interface uses Apple CoreFoundation/Security types and WTF's
+RetainPtr; it does not declare NSURLSession types. Objective-C++ compilation and
+runtime checks remain unrun on Linux. Before treating the refactor as verified,
+build the affected NetworkSessionCocoa, NetworkDataTaskCurlCocoa and WebSocketTask
+translation units on macOS, then compare HTTP/WebSocket proxy routing, TLS floors,
+client certificate handling, redirects and credential/privacy partitions on
+Mavericks. Repeat those checks against the future 10.8 policy producer.
 
 ## Validation boundary
 

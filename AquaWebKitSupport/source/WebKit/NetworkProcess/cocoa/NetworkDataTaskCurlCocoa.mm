@@ -5,6 +5,7 @@
 
 #import "config.h"
 #import "NetworkDataTaskCurlCocoa.h"
+#import "CocoaCurlSessionPolicy.h"
 
 #import "LegacyExtensionNetwork.h"
 #import "DownloadProxyMessages.h"
@@ -222,10 +223,10 @@ void NetworkDataTaskCurlCocoa::setup()
     // each new HTTP exchange observes current credential/privacy pool ownership, including a credential deletion during an earlier hop.
     m_scheduler = downcast<NetworkSessionCocoa>(*m_session).curlNetworkScheduler(m_webPageProxyID, m_request, m_storedCredentialsPolicy, m_isNavigatingToAppBoundDomain);
     auto wrapper = downcast<NetworkSessionCocoa>(*m_session).sessionWrapperForTask(m_webPageProxyID, m_request, m_storedCredentialsPolicy, m_isNavigatingToAppBoundDomain);
-    RetainPtr<NSURLSessionConfiguration> configuration = wrapper->session.get().configuration;
-    CocoaCurlTransferOptions options(configuration.get().TLSMinimumSupportedProtocolVersion);
+    auto policy = wrapper->curlSessionPolicy();
+    CocoaCurlTransferOptions options(policy.minimumTLSProtocol);
     options.request = m_request;
-    options.presentsPreferredIdentity = !configuration.get()._shouldSkipPreferredClientCertificateLookup;
+    options.presentsPreferredIdentity = policy.presentsPreferredIdentity;
     // The jar's Cookie field goes on the wire only, as CFNetwork adds it; a Cookie field the request carries, as a
     // Safari 7 extension's onBeforeSendHeaders sets it, is sent as it is.
     if (!m_shouldPreconnect && !cookiesBlocked() && !m_request.hasHTTPHeaderField(HTTPHeaderName::Cookie)) {
@@ -237,7 +238,7 @@ void NetworkDataTaskCurlCocoa::setup()
     if (auto body = m_request.httpBody())
         options.upload = CocoaCurlUploadBody::create(*body, &m_session->blobRegistry());
     // NetworkSessionCocoa writes the explicit dictionary, or the one its HTTP and HTTPS proxy URLs make, into the configuration.
-    options.proxySettings = bridge_cast(configuration.get().connectionProxyDictionary);
+    options.proxySettings = policy.proxySettings;
     options.proxyFilterResults = LegacyExtensionNetwork::singleton().proxyFilterResults(*this, m_request.url());
     options.acceptedCertificateChain = m_acceptedCertificateChain;
     // a certificate the user accepted for this host governs whether or not the host
